@@ -234,7 +234,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function fetchGitHubStats() {
   try {
-    const response = await fetch('https://api.github.com/repos/Jonghwan-dev/Daily-ArXiv-Tool');
+    // #modified by JH(2026.03.20) - use DATA_CONFIG so repo name stays in sync
+    const response = await fetch(`https://api.github.com/repos/${DATA_CONFIG.repoOwner}/${DATA_CONFIG.repoName}`);
     const data = await response.json();
     const starCount = data.stargazers_count;
     const forkCount = data.forks_count;

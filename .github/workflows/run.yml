@@ -35,36 +35,37 @@ jobs:
         # At 22:00 UTC (07:00 KST), arXiv /new already contains the previous day's
         # announcement batch. We name the file by yesterday's KST date so the UI
         # shows the correct date for Korean users.
+        # #modified by JH(2026.03.20) - KST yesterday as target date
         TARGET_DATE=$(TZ=Asia/Seoul date -d "yesterday" "+%Y-%m-%d")
         echo "TARGET_DATE (KST yesterday): $TARGET_DATE"
+
+        # #modified by JH(2026.03.20) - Bug fix: export via GITHUB_ENV so TARGET_DATE
+        # persists to ALL subsequent steps (plain `export` only works in the current shell)
+        echo "TARGET_DATE=$TARGET_DATE" >> $GITHUB_ENV
+        echo "crawl_date=$TARGET_DATE" >> $GITHUB_OUTPUT
+
         echo "Starting to crawl $TARGET_DATE arXiv papers..."
+
+        # #modified by JH(2026.03.20) - Bug fix: data/ not tracked in git so must be created
+        mkdir -p data
 
         # Check if target file already exists, delete for fresh start
         if [ -f "data/${TARGET_DATE}.jsonl" ]; then
             echo "Found existing file for $TARGET_DATE, deleting for fresh start..."
             rm "data/${TARGET_DATE}.jsonl"
-        else
-            echo "No existing file for $TARGET_DATE, ready to create..."
         fi
 
         cd daily_arxiv
-        # LLM API config (Modified by JH 2026-03-20: using Groq free tier)
-        # Secrets required:
-        #   OPENAI_API_KEY  → your Groq API key (https://console.groq.com/keys)
+        # Groq free tier config — set via GitHub Secrets/Variables:
+        #   OPENAI_API_KEY  → Groq API key  (console.groq.com/keys)
         #   OPENAI_BASE_URL → https://api.groq.com/openai/v1
-        # Variables required:
-        #   MODEL_NAME → llama-3.3-70b-versatile  (1000 RPD, best quality)
-        #             or llama-3.1-8b-instant      (14400 RPD, high volume)
-        #   LANGUAGE   → English
-        #   CATEGORIES → cs.CV, cs.CL
+        #   MODEL_NAME      → llama-3.3-70b-versatile (1000 RPD) | llama-3.1-8b-instant (14400 RPD)
         export OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
         export OPENAI_BASE_URL=${{ secrets.OPENAI_BASE_URL }}
         export TOKEN_GITHUB=${{ secrets.TOKEN_GITHUB }}
         export LANGUAGE="${{ vars.LANGUAGE }}"
         export CATEGORIES="${{ vars.CATEGORIES }}"
         export MODEL_NAME="${{ vars.MODEL_NAME }}"
-        # Pass TARGET_DATE so check_stats.py uses the same date reference
-        export TARGET_DATE="$TARGET_DATE"
 
         # Use Scrapy to crawl arXiv /new (always the latest announcement batch)
         scrapy crawl arxiv -o ../data/${TARGET_DATE}.jsonl
@@ -75,18 +76,17 @@ jobs:
             exit 1
         fi
 
-        echo "crawl_date=$TARGET_DATE" >> $GITHUB_OUTPUT
         echo "Crawling completed"
         
     - name: Check for duplicates
       id: dedup_check
       run: |
         source .venv/bin/activate
-        echo "Performing intelligent deduplication check..."
-        
+        # TARGET_DATE is available via $GITHUB_ENV set in crawl step
+        echo "Performing deduplication check for $TARGET_DATE ..."
+
         cd daily_arxiv
-        # Execute intelligent deduplication check script
-        set +e  # Temporarily allow command failure
+        set +e
         python daily_arxiv/check_stats.py
         
         # Get exit code

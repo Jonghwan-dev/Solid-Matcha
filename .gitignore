@@ -1,0 +1,18 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+ai/.env
+test/*
+.idea/
+.cursorrules
+
+# Data files — belong in the data branch only (Modified by JH 2026-03-20)
+data/
+uv.lock

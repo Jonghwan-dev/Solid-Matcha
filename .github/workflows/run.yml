@@ -1,0 +1,523 @@
+# Daily arXiv AI Enhanced - GitHub Actions Workflow
+# Copyright 2026 Jonghwan Kim
+# 
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+
+name: arXiv-daily-ai-enhanced # actions workflow name
+
+on:
+  schedule:
+    # Runs at 22:00 UTC (07:00 KST next day) every day
+    # Modified by JH 2026-03-20: changed from 21:00 UTC to 22:00 UTC for 7 AM KST target
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install dependencies
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        uv sync
+        
+    - name: Crawl arXiv papers
+      id: crawl_step
+      run: |
+        source .venv/bin/activate
+
+        # Modified by JH 2026-03-20: use KST yesterday as TARGET_DATE
+        # At 22:00 UTC (07:00 KST), arXiv /new already contains the previous day's
+        # announcement batch. We name the file by yesterday's KST date so the UI
+        # shows the correct date for Korean users.
+        TARGET_DATE=$(TZ=Asia/Seoul date -d "yesterday" "+%Y-%m-%d")
+        echo "TARGET_DATE (KST yesterday): $TARGET_DATE"
+        echo "Starting to crawl $TARGET_DATE arXiv papers..."
+
+        # Check if target file already exists, delete for fresh start
+        if [ -f "data/${TARGET_DATE}.jsonl" ]; then
+            echo "Found existing file for $TARGET_DATE, deleting for fresh start..."
+            rm "data/${TARGET_DATE}.jsonl"
+        else
+            echo "No existing file for $TARGET_DATE, ready to create..."
+        fi
+
+        cd daily_arxiv
+        # LLM API config (Modified by JH 2026-03-20: using Groq free tier)
+        # Secrets required:
+        #   OPENAI_API_KEY  → your Groq API key (https://console.groq.com/keys)
+        #   OPENAI_BASE_URL → https://api.groq.com/openai/v1
+        # Variables required:
+        #   MODEL_NAME → llama-3.3-70b-versatile  (1000 RPD, best quality)
+        #             or llama-3.1-8b-instant      (14400 RPD, high volume)
+        #   LANGUAGE   → English
+        #   CATEGORIES → cs.CV, cs.CL
+        export OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+        export OPENAI_BASE_URL=${{ secrets.OPENAI_BASE_URL }}
+        export TOKEN_GITHUB=${{ secrets.TOKEN_GITHUB }}
+        export LANGUAGE="${{ vars.LANGUAGE }}"
+        export CATEGORIES="${{ vars.CATEGORIES }}"
+        export MODEL_NAME="${{ vars.MODEL_NAME }}"
+        # Pass TARGET_DATE so check_stats.py uses the same date reference
+        export TARGET_DATE="$TARGET_DATE"
+
+        # Use Scrapy to crawl arXiv /new (always the latest announcement batch)
+        scrapy crawl arxiv -o ../data/${TARGET_DATE}.jsonl
+
+        # Check if crawling was successful
+        if [ ! -f "../data/${TARGET_DATE}.jsonl" ]; then
+            echo "Crawling failed, no data file generated"
+            exit 1
+        fi
+
+        echo "crawl_date=$TARGET_DATE" >> $GITHUB_OUTPUT
+        echo "Crawling completed"
+        
+    - name: Check for duplicates
+      id: dedup_check
+      run: |
+        source .venv/bin/activate
+        echo "Performing intelligent deduplication check..."
+        
+        cd daily_arxiv
+        # Execute intelligent deduplication check script
+        set +e  # Temporarily allow command failure
+        python daily_arxiv/check_stats.py
+        
+        # Get exit code
+        dedup_exit_code=$?
+        set -e  # Restore strict mode
+        
+        echo "Dedup check exit code: $dedup_exit_code"
+        echo "dedup_exit_code=$dedup_exit_code" >> $GITHUB_OUTPUT
+        
+        case $dedup_exit_code in
+            0)
+                echo "has_new_content=true" >> $GITHUB_OUTPUT
+                ;;
+            1)
+                echo "has_new_content=false" >> $GITHUB_OUTPUT
+                echo "skip_reason=no_new_content" >> $GITHUB_OUTPUT
+                ;;
+            2)
+                echo "has_new_content=false" >> $GITHUB_OUTPUT
+                echo "skip_reason=processing_error" >> $GITHUB_OUTPUT
+                exit 1
+                ;;
+            *)
+                echo "Unknown exit code, stop workflow"
+                echo "has_new_content=false" >> $GITHUB_OUTPUT
+                echo "skip_reason=unknown_error" >> $GITHUB_OUTPUT
+                exit 1
+                ;;
+        esac
+        
+    - name: AI Enhancement Processing
+      if: steps.dedup_check.outputs.has_new_content == 'true'
+      run: |
+        source .venv/bin/activate
+        today=${{ steps.crawl_step.outputs.crawl_date }}
+        echo "Starting AI enhancement processing..."
+        
+        cd ai
+        export OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+        export OPENAI_BASE_URL=${{ secrets.OPENAI_BASE_URL }}
+        export LANGUAGE="${{ vars.LANGUAGE }}"
+        export MODEL_NAME="${{ vars.MODEL_NAME }}"
+        
+        python enhance.py --data ../data/${today}.jsonl
+        
+        # Check if AI processing was successful
+        if [ $? -ne 0 ]; then
+            echo "AI processing failed"
+            exit 1
+        fi
+        echo "AI enhancement processing completed"
+        
+    - name: Convert to Markdown
+      if: steps.dedup_check.outputs.has_new_content == 'true'
+      run: |
+        source .venv/bin/activate
+        today=${{ steps.crawl_step.outputs.crawl_date }}
+        echo "Converting to Markdown format..."
+        
+        # Set environment variables
+        export LANGUAGE="${{ vars.LANGUAGE }}"
+        
+        cd to_md
+        
+        # Use AI enhanced file for conversion
+        AI_FILE="../data/${today}_AI_enhanced_${LANGUAGE}.jsonl"
+        
+        if [ -f "$AI_FILE" ]; then
+            echo "Using AI enhanced file for conversion..."
+            python convert.py --data "$AI_FILE"
+        else
+            echo "Error: AI enhanced file not found"
+            echo "AI file: $AI_FILE"
+            exit 1
+        fi
+        
+        # Check if conversion was successful
+        if [ $? -ne 0 ]; then
+            echo "Markdown conversion failed"
+            exit 1
+        fi
+        echo "Markdown conversion completed"
+        
+    # NOTE: file-list.txt is now generated inside the data branch step below.
+    # Modified by JH 2026-03-20: removed main-branch file-list generation
+    # (it only saw today's files, causing calendar to lose all historical dates)
+
+    - name: Generate password hash and inject into config
+      if: steps.dedup_check.outputs.has_new_content == 'true'
+      run: |
+        echo "🔐 Generating password hash for authentication..."
+
+        PASSWORD="${{ secrets.ACCESS_PASSWORD }}"
+
+        if [ -z "$PASSWORD" ]; then
+          echo "⚠️  WARNING: ACCESS_PASSWORD not set in Secrets"
+          echo "⚠️  Password protection will be DISABLED"
+          echo "⚠️  To enable password protection, add ACCESS_PASSWORD in repository Secrets"
+          echo "ℹ️  Website will remain publicly accessible without authentication"
+
+          # Use a special value that will disable authentication
+          PASSWORD_HASH="DISABLED_NO_PASSWORD_SET_IN_SECRETS"
+        else
+          # Generate SHA-256 hash using openssl
+          PASSWORD_HASH=$(echo -n "$PASSWORD" | openssl dgst -sha256 -hex | awk '{print $2}')
+          echo "✅ Password hash generated successfully"
+          echo "✅ Hash length: ${#PASSWORD_HASH} characters"
+          echo "🔐 Password protection is ENABLED"
+        fi
+
+        # Inject hash into auth-config.js
+        if [ -f "js/auth-config.js" ]; then
+          sed -i "s/PLACEHOLDER_PASSWORD_HASH/$PASSWORD_HASH/" js/auth-config.js
+          echo "✅ Password hash injected into js/auth-config.js"
+        else
+          echo "❌ ERROR: js/auth-config.js not found!"
+          exit 1
+        fi
+
+        echo "🔐 Authentication setup complete"
+
+    - name: Summary
+      run: |
+        if [ "${{ steps.dedup_check.outputs.has_new_content }}" = "true" ]; then
+          echo "✅ Workflow completed: Smart deduplication found new content and processed successfully"
+        else
+          case "${{ steps.dedup_check.outputs.skip_reason }}" in
+            "no_new_content")
+              echo "ℹ️ Workflow completed: No new content after smart deduplication"
+              ;;
+            "processing_error")
+              echo "⚠️ Workflow completed: Deduplication processing error"
+              ;;
+            "unknown_error")
+              echo "⚠️ Workflow completed: Unknown error"
+              ;;
+            *)
+              echo "ℹ️ Workflow completed: Skipped for unknown reason"
+              ;;
+          esac
+        fi
+        
+    - name: Inject repository info into data-config.js
+      if: steps.dedup_check.outputs.has_new_content == 'true'
+      run: |
+        echo "Injecting repository info into data-config.js..."
+        
+        # Get repository information
+        REPO_OWNER="${{ github.repository_owner }}"
+        REPO_NAME="${{ github.event.repository.name }}"
+        
+        echo "Repository owner: $REPO_OWNER"
+        echo "Repository name: $REPO_NAME"
+        
+        # Inject repository info into data-config.js
+        if [ -f "js/data-config.js" ]; then
+          sed -i "s/PLACEHOLDER_REPO_OWNER/$REPO_OWNER/g" js/data-config.js
+          sed -i "s/PLACEHOLDER_REPO_NAME/$REPO_NAME/g" js/data-config.js
+          echo "✅ Repository info injected into js/data-config.js"
+        else
+          echo "❌ ERROR: js/data-config.js not found!"
+          exit 1
+        fi
+
+    - name: Commit code changes to main branch
+      if: steps.dedup_check.outputs.has_new_content == 'true'
+      run: |
+        git config --global user.email "${{ vars.EMAIL }}"
+        git config --global user.name "${{ vars.NAME }}"
+        
+        # Add all code files, but exclude data files
+        git add js/data-config.js
+        git add .github/
+        # Add other possible code changes, but exclude data/ directory and assets/file-list.txt
+        git add -A
+        git reset -- data/* assets/file-list.txt 2>/dev/null || true
+        
+        # Check if there are code changes to commit
+        if git diff --staged --quiet; then
+          echo "No code changes to commit"
+        else
+          git commit -m "chore: update data-config.js with repository info"
+          echo "Code changes committed to main branch"
+        fi
+
+    - name: Push code changes to main branch
+      if: steps.dedup_check.outputs.has_new_content == 'true'
+      run: |
+        # Set Git config for automatic merging
+        git config pull.rebase true
+        git config rebase.autoStash true
+        
+        # Try to push code changes to main branch
+        for i in {1..3}; do
+          echo "Push code changes attempt $i"
+          if git push origin main; then
+            echo "Code changes pushed successfully"
+            break
+          else
+            echo "Push failed, pulling latest changes..."
+            git pull origin main --no-edit || true
+            if [ $i -eq 3 ]; then
+              echo "Failed to push after 3 attempts"
+              exit 1
+            fi
+          fi
+        done
+
+    - name: Prepare data files for data branch
+      if: steps.dedup_check.outputs.has_new_content == 'true'
+      run: |
+        echo "Preparing data files..."
+        today=${{ steps.crawl_step.outputs.crawl_date }}
+
+        # Modified by JH 2026-03-20: removed /tmp/data_files/assets copy
+        # file-list.txt is now generated after switching to data branch
+        # so it includes ALL historical files, not just today's
+        mkdir -p /tmp/data_files/data
+
+        cp -r data/* /tmp/data_files/data/ 2>/dev/null || true
+
+        echo "Data files saved to temporary directory"
+
+    - name: Setup and commit to data branch
+      if: steps.dedup_check.outputs.has_new_content == 'true'
+      run: |
+        git config --global user.email "${{ vars.EMAIL }}"
+        git config --global user.name "${{ vars.NAME }}"
+        
+        echo "Setting up data branch..."
+        today=${{ steps.crawl_step.outputs.crawl_date }}
+        
+        # Before switching branches, clean untracked files that might conflict
+        # Before switching branches, clean untracked files that might conflict
+        # These files are already saved to temporary directory, so safe to remove
+        rm -rf data/*.jsonl 2>/dev/null || true
+        rm -f assets/file-list.txt 2>/dev/null || true
+        
+        # Check if data branch exists
+        if git ls-remote --heads origin data | grep -q data; then
+          echo "Data branch exists, switching to data branch"
+          git fetch origin data:data
+          git checkout data
+          git pull origin data || true
+        else
+          echo "Data branch does not exist, creating new branch"
+          # Create empty data branch
+          git checkout --orphan data
+          git rm -rf --cached . 2>/dev/null || true
+          # Ensure data and assets directories exist
+          mkdir -p data assets
+          echo "# Data Branch" > README.md
+          git add README.md
+          git commit -m "chore: initialize data branch"
+          git push origin data
+        fi
+        
+        # Restore today's new data files from temporary directory
+        mkdir -p data assets
+        cp -r /tmp/data_files/data/* data/ 2>/dev/null || true
+
+        # Modified by JH 2026-03-20: regenerate file-list.txt HERE (data branch context)
+        # At this point data/ contains ALL historical files + today's new files,
+        # so the calendar can navigate to any past date correctly.
+        ls data/*.jsonl 2>/dev/null | sed 's|data/||' | sort -r > assets/file-list.txt || true
+        echo "file-list.txt updated: $(wc -l < assets/file-list.txt) entries"
+
+        # Only add data files
+        git add data/* 2>/dev/null || true
+        git add assets/file-list.txt 2>/dev/null || true
+        
+        # Check if there are data changes to commit
+        if git diff --staged --quiet; then
+          echo "No data changes to commit"
+        else
+          git commit -m "update: $today arXiv papers"
+          echo "Data changes committed to data branch"
+        fi
+
+    - name: Push data changes to data branch
+      if: steps.dedup_check.outputs.has_new_content == 'true'
+      run: |
+        # Set Git config for automatic merging
+        git config pull.rebase true
+        git config rebase.autoStash true
+        
+        # Try to push data changes to data branch
+        for i in {1..3}; do
+          echo "Push data changes attempt $i"
+          if git push origin data; then
+            echo "Data changes pushed successfully"
+            break
+          else
+            echo "Push failed, pulling latest changes..."
+            git pull origin data --no-edit || true
+            if [ $i -eq 3 ]; then
+              echo "Failed to push after 3 attempts"
+              exit 1
+            fi
+          fi
+        done
+
+    # ---------------------------------------------------------------
+    # Slack Notifications  (Added by JH 2026-03-20)
+    # Required secret : SLACK_WEBHOOK_URL
+    # Both steps are no-ops when the secret is not configured.
+    # ---------------------------------------------------------------
+
+    - name: Slack - success notification
+      if: steps.dedup_check.outputs.has_new_content == 'true' && success()
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        CATEGORIES:        ${{ vars.CATEGORIES }}
+        MODEL_NAME:        ${{ vars.MODEL_NAME }}
+        LANGUAGE:          ${{ vars.LANGUAGE }}
+        REPO_OWNER:        ${{ github.repository_owner }}
+        REPO_NAME:         ${{ github.event.repository.name }}
+        RUN_URL:           ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        if [ -z "$SLACK_WEBHOOK_URL" ]; then
+          echo "SLACK_WEBHOOK_URL not configured — skipping success notification"
+          exit 0
+        fi
+
+        TARGET_DATE=${{ steps.crawl_step.outputs.crawl_date }}
+        SITE_URL="https://${REPO_OWNER}.github.io/${REPO_NAME}/"
+
+        # Count papers in AI-enhanced file (we are on data branch at this point)
+        AI_FILE="data/${TARGET_DATE}_AI_enhanced_${LANGUAGE}.jsonl"
+        if [ -f "$AI_FILE" ]; then
+          PAPER_COUNT=$(wc -l < "$AI_FILE" | tr -d ' ')
+        else
+          PAPER_COUNT="?"
+        fi
+
+        # Build JSON with jq (handles all escaping safely)
+        jq -n \
+          --arg date      "$TARGET_DATE" \
+          --arg count     "${PAPER_COUNT}편" \
+          --arg cats      "$CATEGORIES" \
+          --arg model     "$MODEL_NAME" \
+          --arg site_url  "$SITE_URL" \
+          --arg run_url   "$RUN_URL" \
+          '{
+            blocks: [
+              {
+                type: "header",
+                text: { type: "plain_text", text: "Solid-Matcha 논문 업데이트 완료 ✅", emoji: true }
+              },
+              {
+                type: "section",
+                fields: [
+                  { type: "mrkdwn", text: ("*날짜*\n" + $date) },
+                  { type: "mrkdwn", text: ("*논문 수*\n" + $count) },
+                  { type: "mrkdwn", text: ("*카테고리*\n" + $cats) },
+                  { type: "mrkdwn", text: ("*모델*\n" + $model) }
+                ]
+              },
+              { type: "divider" },
+              {
+                type: "actions",
+                elements: [
+                  {
+                    type: "button",
+                    text: { type: "plain_text", text: "논문 보기 →", emoji: true },
+                    style: "primary",
+                    url: $site_url
+                  },
+                  {
+                    type: "button",
+                    text: { type: "plain_text", text: "Actions 로그", emoji: true },
+                    url: $run_url
+                  }
+                ]
+              }
+            ]
+          }' \
+        | curl -s -o /dev/null -w "%{http_code}" \
+               -X POST "$SLACK_WEBHOOK_URL" \
+               -H "Content-Type: application/json" \
+               -d @- \
+        | xargs -I{} echo "Slack response: {}"
+
+    - name: Slack - failure notification
+      if: failure()
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        RUN_URL:           ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        if [ -z "$SLACK_WEBHOOK_URL" ]; then
+          echo "SLACK_WEBHOOK_URL not configured — skipping failure notification"
+          exit 0
+        fi
+
+        # TARGET_DATE may be empty if the crawl step itself failed
+        TARGET_DATE="${{ steps.crawl_step.outputs.crawl_date }}"
+        if [ -z "$TARGET_DATE" ]; then
+          TARGET_DATE="unknown (crawl step failed)"
+        fi
+
+        jq -n \
+          --arg date    "$TARGET_DATE" \
+          --arg run_url "$RUN_URL" \
+          '{
+            blocks: [
+              {
+                type: "header",
+                text: { type: "plain_text", text: "Solid-Matcha 처리 실패 ❌", emoji: true }
+              },
+              {
+                type: "section",
+                fields: [
+                  { type: "mrkdwn", text: ("*날짜*\n" + $date) },
+                  { type: "mrkdwn", text: "*상태*\nGitHub Actions 에서 오류 발생" }
+                ]
+              },
+              {
+                type: "actions",
+                elements: [
+                  {
+                    type: "button",
+                    text: { type: "plain_text", text: "오류 로그 확인 →", emoji: true },
+                    style: "danger",
+                    url: $run_url
+                  }
+                ]
+              }
+            ]
+          }' \
+        | curl -s -o /dev/null -w "%{http_code}" \
+               -X POST "$SLACK_WEBHOOK_URL" \
+               -H "Content-Type: application/json" \
+               -d @- \
+        | xargs -I{} echo "Slack response: {}"

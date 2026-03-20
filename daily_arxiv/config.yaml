@@ -1,0 +1,10 @@
+# Modified by JH 2026-03-20: switched default model from deepseek-chat to Groq
+# Groq free tier — set via GitHub Actions Variables (MODEL_NAME)
+# Recommended: llama-3.3-70b-versatile (1000 RPD) or llama-3.1-8b-instant (14400 RPD)
+arxiv:
+  categories:
+    - cs.CV
+    - cs.CL
+
+llm:
+  model_name: 'llama-3.3-70b-versatile'

@@ -176,7 +176,11 @@ def process_single_item(chain, item: Dict, language: str) -> Dict:
 
 def process_all_items(data: List[Dict], model_name: str, language: str, max_workers: int) -> List[Dict]:
     """Process all items in parallel"""
-    llm = ChatOpenAI(model=model_name).with_structured_output(Structure, method="function_calling")
+    # #modified by JH(2026.03.22) - changed from "function_calling" to "json_schema"
+    # "function_calling" breaks on models that output Python-style Structure(...)
+    # instead of proper JSON (e.g. kimi-k2-instruct → tool_use_failed 400 error).
+    # "json_schema" is widely supported across OpenAI-compatible APIs including Groq.
+    llm = ChatOpenAI(model=model_name).with_structured_output(Structure, method="json_schema")
     print('Connect to:', model_name, file=sys.stderr)
     
     prompt_template = ChatPromptTemplate.from_messages([

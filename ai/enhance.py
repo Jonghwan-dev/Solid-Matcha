@@ -128,10 +128,12 @@ def process_single_item(chain, item: Dict, language: str) -> Dict:
     }
     
     try:
-# ==============================================    
-        # Modified by JH 2026-03-20: reduced from 10s to 3s for Groq free tier
-        # Groq free tier limit: 30 RPM → min 2s between requests.
-        # 3s gives safe margin. Keep max_workers=1 (default) to stay under limit.
+# ==============================================
+        # #modified by JH(2026.03.23) - sleep for Groq AI API rate limit only
+        # Groq free tier: 30 RPM → theoretical min = 60/30 = 2s per request.
+        # sleep(3) = 20 RPM effective (33% headroom). NOT related to crawling.
+        # Model: meta-llama/llama-4-scout-17b-16e-instruct (RPM=30, TPM=30K, TPD=500K)
+        # ~265 papers × ~800 tokens = ~212K tokens/day → well within 500K TPD.
         time.sleep(3)
 # ==============================================
         response: Structure = chain.invoke({

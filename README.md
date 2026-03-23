@@ -24,7 +24,7 @@ Built entirely on GitHub Actions and Pages — zero infrastructure, completely f
 🤖 **AI Summarization via Groq (Free)**
 - Daily paper crawling with structured AI summaries
 - 5-field output: TL;DR / Motivation / Method / Result / Conclusion
-- Powered by `llama-3.3-70b-versatile` on Groq free tier
+- Powered by `meta-llama/llama-4-scout-17b-16e-instruct` on Groq free tier
 
 💫 **Smart Reading Experience**
 - Personalized keyword & author filtering
@@ -65,7 +65,7 @@ Built entirely on GitHub Actions and Pages — zero infrastructure, completely f
 
 | Name | Value |
 |------|-------|
-| `MODEL_NAME` | `llama-3.3-70b-versatile` |
+| `MODEL_NAME` | `meta-llama/llama-4-scout-17b-16e-instruct` |
 | `LANGUAGE` | `English` |
 | `CATEGORIES` | `cs.CV, cs.CL` |
 | `EMAIL` | your git commit email |
@@ -102,7 +102,7 @@ export OPENAI_API_KEY="gsk_..."
 export OPENAI_BASE_URL="https://api.groq.com/openai/v1"
 export LANGUAGE="English"
 export CATEGORIES="cs.CV, cs.CL"
-export MODEL_NAME="llama-3.3-70b-versatile"
+export MODEL_NAME="meta-llama/llama-4-scout-17b-16e-instruct"
 ./run.sh
 ```
 
@@ -139,7 +139,7 @@ GitHub Actions + Pages만으로 운영 — 인프라 불필요, 완전 무료.
 🤖 **Groq 무료 AI 요약**
 - 일일 논문 크롤링 + 구조화된 AI 요약
 - 5개 필드: TL;DR / 동기 / 방법 / 결과 / 결론
-- `llama-3.3-70b-versatile` (Groq 무료 티어)
+- `meta-llama/llama-4-scout-17b-16e-instruct` (Groq 무료 티어)
 
 💫 **스마트 읽기 환경**
 - 키워드·저자 기반 맞춤 필터링
@@ -180,7 +180,7 @@ GitHub Actions + Pages만으로 운영 — 인프라 불필요, 완전 무료.
 
 | 이름 | 값 |
 |------|-----|
-| `MODEL_NAME` | `llama-3.3-70b-versatile` |
+| `MODEL_NAME` | `meta-llama/llama-4-scout-17b-16e-instruct` |
 | `LANGUAGE` | `English` |
 | `CATEGORIES` | `cs.CV, cs.CL` |
 | `EMAIL` | git 커밋용 이메일 |
@@ -211,7 +211,7 @@ export OPENAI_API_KEY="gsk_..."
 export OPENAI_BASE_URL="https://api.groq.com/openai/v1"
 export LANGUAGE="English"
 export CATEGORIES="cs.CV, cs.CL"
-export MODEL_NAME="llama-3.3-70b-versatile"
+export MODEL_NAME="meta-llama/llama-4-scout-17b-16e-instruct"
 ./run.sh
 ```
 

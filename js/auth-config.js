@@ -12,11 +12,11 @@ const AUTH_CONFIG = {
      * SHA-256 hash of the access password
      * This will be replaced during GitHub Actions workflow execution
      */
-    // Modified by JH 2026-03-20: changed default to PLACEHOLDER_PASSWORD_HASH.
+    // Modified by JH 2026-03-20: changed default to DISABLED_NO_PASSWORD_SET_IN_SECRETS.
     // The workflow's sed command targets this string to inject the real hash.
     // Previously 'DISABLED_NO_PASSWORD_SET_IN_SECRETS' was hardcoded here,
     // so sed never matched and password protection could never be enabled.
-    passwordHash: 'PLACEHOLDER_PASSWORD_HASH',
+    passwordHash: 'DISABLED_NO_PASSWORD_SET_IN_SECRETS',
 
     /**
      * Session duration in milliseconds

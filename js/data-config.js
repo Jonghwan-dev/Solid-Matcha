@@ -16,13 +16,13 @@ const DATA_CONFIG = {
      */
     // Modified by JH 2026-03-20: replaced hardcoded fork values with placeholders.
     // GitHub Actions workflow injects the actual owner/name via sed during deployment.
-    repoOwner: 'PLACEHOLDER_REPO_OWNER',
+    repoOwner: 'Jonghwan-dev',
 
     /**
      * GitHub repository name
      * This will be replaced during GitHub Actions workflow execution
      */
-    repoName: 'PLACEHOLDER_REPO_NAME',
+    repoName: 'Solid-Matcha',
 
     /**
      * Data branch name

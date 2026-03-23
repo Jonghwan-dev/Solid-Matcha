@@ -1377,17 +1377,12 @@ function showPaperDetails(paper, paperIndex) {
   }
   // ---------------------------
 
-  // Prompt from: https://papers.cool/-------------------------------------------------------------
-  // prompt = `Read this paper ${paper.url.replace('abs', 'pdf')}, summarize the problems solved, related work, research methods, experiments and results, conclusion, and finally summarize the content of this paper.`
-  // document.getElementById('GeminiLink').href = `https://gemini.google.com/app?text=You%20are%20an%20academic%20assistant.%20The%20conversation%20will%20revolve%20around%20the%20content%20of%20the%20paper.%20Answer%20professionally%20in%20the%20third%20person%20and%20use%20Markdown.%0A%0A${prompt}`;
-  const systemInstruction = "You are an academic assistant. The conversation will revolve around the content of the paper. Answer professionally in the third person and use Markdown.";
-  const taskPrompt = `Read this paper ${paper.url.replace('abs', 'pdf')}, summarize the problems solved, related work, research methods, experiments and results, conclusion, and finally summarize the content of this paper.`;
-
-  // Concatenate system instruction and task prompt
-  const fullQuery = `${systemInstruction}\n\n${taskPrompt}`;
-
-  document.getElementById('GeminiLink').href = `https://gemini.google.com/app?text=${encodeURIComponent(fullQuery)}`;
-  // -----------------------------------------------------------------------------------------------
+  // #modified by JH(2026.03.23) - switched from Gemini to Perplexity
+  // Gemini does not support URL-based prompt pre-fill (?text= param is ignored).
+  // Perplexity supports ?q= which auto-fills AND auto-submits the query,
+  // and can fetch/read the actual arxiv paper from the web.
+  const perplexityQuery = `Summarize and analyze this arxiv paper in detail: "${paper.title}" ${paper.url}`;
+  document.getElementById('GeminiLink').href = `https://www.perplexity.ai/?q=${encodeURIComponent(perplexityQuery)}`;
   
   // Update paper position information
   const paperPosition = document.getElementById('paperPosition');

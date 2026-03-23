@@ -22,6 +22,10 @@ jobs:
     # can push to main and data branches (fixes 403 Permission denied error)
     permissions:
       contents: write
+    # #modified by JH(2026.03.23) - opt into Node.js 24 early to suppress deprecation warning
+    # actions/checkout@v4 still runs on Node.js 20 by default; forced to 24 here.
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
     - uses: actions/checkout@v4

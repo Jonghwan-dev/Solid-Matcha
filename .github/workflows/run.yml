@@ -38,13 +38,13 @@ jobs:
       run: |
         source .venv/bin/activate
 
-        # Modified by JH 2026-03-20: use KST yesterday as TARGET_DATE
-        # At 22:00 UTC (07:00 KST), arXiv /new already contains the previous day's
-        # announcement batch. We name the file by yesterday's KST date so the UI
-        # shows the correct date for Korean users.
-        # #modified by JH(2026.03.20) - KST yesterday as target date
-        TARGET_DATE=$(TZ=Asia/Seoul date -d "yesterday" "+%Y-%m-%d")
-        echo "TARGET_DATE (KST yesterday): $TARGET_DATE"
+        # #modified by JH(2026.03.23) - use KST TODAY as TARGET_DATE
+        # At 07:00 KST the workflow runs and fetches arXiv /new (which contains
+        # the previous day's batch). We name the file by TODAY's KST date so the
+        # calendar shows the date Korean users actually see the papers (today),
+        # not the arXiv submission date (yesterday).
+        TARGET_DATE=$(TZ=Asia/Seoul date "+%Y-%m-%d")
+        echo "TARGET_DATE (KST today): $TARGET_DATE"
 
         # #modified by JH(2026.03.20) - Bug fix: export via GITHUB_ENV so TARGET_DATE
         # persists to ALL subsequent steps (plain `export` only works in the current shell)
@@ -408,12 +408,12 @@ jobs:
     # Both steps are no-ops when the secret is not configured.
     # ---------------------------------------------------------------
 
+    # #modified by JH(2026.03.23) - expanded Slack success notification
+    # Now includes: per-category paper counts + trending keywords from titles
     - name: Slack - success notification
       if: steps.dedup_check.outputs.has_new_content == 'true' && success()
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        CATEGORIES:        ${{ vars.CATEGORIES }}
-        MODEL_NAME:        ${{ vars.MODEL_NAME }}
         LANGUAGE:          ${{ vars.LANGUAGE }}
         REPO_OWNER:        ${{ github.repository_owner }}
         REPO_NAME:         ${{ github.event.repository.name }}
@@ -426,21 +426,75 @@ jobs:
 
         TARGET_DATE=${{ steps.crawl_step.outputs.crawl_date }}
         SITE_URL="https://${REPO_OWNER}.github.io/${REPO_NAME}/"
-
-        # Count papers in AI-enhanced file (we are on data branch at this point)
         AI_FILE="data/${TARGET_DATE}_AI_enhanced_${LANGUAGE}.jsonl"
-        if [ -f "$AI_FILE" ]; then
-          PAPER_COUNT=$(wc -l < "$AI_FILE" | tr -d ' ')
-        else
-          PAPER_COUNT="?"
-        fi
 
-        # Build JSON with jq (handles all escaping safely)
+        # Python analysis: total count, per-category, trending keywords
+        ANALYSIS=$(python3 - "$AI_FILE" <<'PYEOF'
+import json, sys, re
+from collections import Counter
+
+path = sys.argv[1]
+papers = []
+try:
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    papers.append(json.loads(line))
+                except Exception:
+                    pass
+except Exception:
+    pass
+
+total = len(papers)
+
+# Per-category count (categories stored as list)
+cat_c = Counter()
+for p in papers:
+    cats = p.get("categories", [])
+    if isinstance(cats, str):
+        cats = cats.split()
+    for c in cats:
+        cat_c[c.strip()] += 1
+
+# Trending keywords from titles (filter short/common words)
+STOP = {
+    "a","an","the","of","in","and","for","with","to","on","is","are",
+    "via","using","based","from","by","as","at","this","that","its",
+    "our","we","new","large","towards","learning","approach","method",
+    "methods","high","low","multi","pre","deep","over","into","their",
+    "can","have","been","more","than","also","about","model","models",
+    "without","between","within","across","each","both","which","when",
+    "data","task","tasks","training","efficient","performance","improve",
+    "improved","improving","show","shows","propose","proposed","achieve",
+}
+wc = Counter()
+for p in papers:
+    words = re.findall(r"[A-Za-z][A-Za-z-]{3,}", p.get("title", "").lower())
+    for w in words:
+        if w not in STOP:
+            wc[w] += 1
+
+# Format outputs
+cat_lines = "\n".join(f"• *{c}*: {n}편" for c, n in cat_c.most_common(6))
+kw_text = "  ".join(f"`{w}`({n})" for w, n in wc.most_common(8))
+
+result = {"total": total, "cat_lines": cat_lines or "분류 정보 없음", "kw_text": kw_text or "-"}
+print(json.dumps(result, ensure_ascii=False))
+PYEOF
+)
+
+        TOTAL=$(echo "$ANALYSIS"     | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['total'])" 2>/dev/null || echo "?")
+        CAT_LINES=$(echo "$ANALYSIS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['cat_lines'])" 2>/dev/null || echo "-")
+        KW_TEXT=$(echo "$ANALYSIS"   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['kw_text'])" 2>/dev/null || echo "-")
+
+        # Build Slack Block Kit JSON
         jq -n \
           --arg date      "$TARGET_DATE" \
-          --arg count     "${PAPER_COUNT}편" \
-          --arg cats      "$CATEGORIES" \
-          --arg model     "$MODEL_NAME" \
+          --arg total     "${TOTAL}편" \
+          --arg cats      "$CAT_LINES" \
+          --arg keywords  "$KW_TEXT" \
           --arg site_url  "$SITE_URL" \
           --arg run_url   "$RUN_URL" \
           '{
@@ -453,10 +507,16 @@ jobs:
                 type: "section",
                 fields: [
                   { type: "mrkdwn", text: ("*날짜*\n" + $date) },
-                  { type: "mrkdwn", text: ("*논문 수*\n" + $count) },
-                  { type: "mrkdwn", text: ("*카테고리*\n" + $cats) },
-                  { type: "mrkdwn", text: ("*모델*\n" + $model) }
+                  { type: "mrkdwn", text: ("*총 논문 수*\n" + $total) }
                 ]
+              },
+              {
+                type: "section",
+                text: { type: "mrkdwn", text: ("*카테고리별 논문 수*\n" + $cats) }
+              },
+              {
+                type: "section",
+                text: { type: "mrkdwn", text: ("*오늘의 트렌딩 키워드*\n" + $keywords) }
               },
               { type: "divider" },
               {

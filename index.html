@@ -141,15 +141,13 @@
                 <!-- Filter Tag Container -->
                 <div class="filter-label-container">
                     <span class="filter-nav-label">Filter</span>
-                    <!-- Text Search (magnifier-triggered) -->
+                    <!-- #modified by JH(2026.03.23) - always-visible search bar, 2+ char minimum -->
                     <div id="textSearchContainer" class="text-search">
-                        <button id="textSearchToggle" class="icon-button" title="Search">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <div class="search-input-wrapper">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;opacity:0.5;">
                                 <path d="M10.5 3a7.5 7.5 0 105.07 13.07l3.68 3.68a1 1 0 001.41-1.41l-3.68-3.68A7.5 7.5 0 0010.5 3zm0 2a5.5 5.5 0 110 11 5.5 5.5 0 010-11z" fill="currentColor"/>
                             </svg>
-                        </button>
-                        <div class="search-input-wrapper" style="display: none;">
-                            <input id="textSearchInput" type="text" placeholder="Type to search..." aria-label="Search" />
+                            <input id="textSearchInput" type="text" placeholder="Search papers (2+ characters)..." aria-label="Search" />
                             <button id="textSearchClear" class="clear-x" title="Clear" style="display: none;">×</button>
                         </div>
                     </div>

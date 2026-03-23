@@ -418,36 +418,26 @@ function initEventListeners() {
   const searchInput = document.getElementById('textSearchInput');
   const searchClear = document.getElementById('textSearchClear');
 
-  if (searchToggle && searchWrapper && searchInput && searchClear) {
-    searchToggle.addEventListener('click', (e) => {
-      e.stopPropagation();
-      searchWrapper.style.display = 'flex';
-      searchInput.focus();
-    });
-
-    // Update query and re-render on input
+  // #modified by JH(2026.03.23) - always-visible search bar, minimum 2 characters
+  // Removed toggle button logic; search input is always shown in the UI.
+  if (searchWrapper && searchInput && searchClear) {
     const handleInput = () => {
       const value = searchInput.value.trim();
-      textSearchQuery = value;
-      //  non-empty text : Use a toggle function
-      if (textSearchQuery.length > 0) {
-        if (previousActiveKeywords === null) {
-          previousActiveKeywords = [...activeKeywords];
-        }
-        if (previousActiveAuthors === null) {
-          previousActiveAuthors = [...activeAuthors];
-        }
-        // Disable each active keyword/author
-        // Note: Copy array before iteration to avoid modifying original array during iteration
+
+      // Require at least 2 characters to activate search
+      if (value.length >= 2) {
+        textSearchQuery = value;
+        if (previousActiveKeywords === null) previousActiveKeywords = [...activeKeywords];
+        if (previousActiveAuthors === null) previousActiveAuthors = [...activeAuthors];
         const keywordsToDisable = [...activeKeywords];
         const authorsToDisable = [...activeAuthors];
         keywordsToDisable.forEach(k => toggleKeywordFilter(k));
         authorsToDisable.forEach(a => toggleAuthorFilter(a));
       } else {
-        // Text deleted to empty, restore previous active keywords/authors
+        // Less than 2 chars — clear search, restore filters
+        textSearchQuery = '';
         if (previousActiveKeywords && previousActiveKeywords.length > 0) {
           previousActiveKeywords.forEach(k => {
-            // If not currently active, toggle back to active
             if (!activeKeywords.includes(k)) toggleKeywordFilter(k);
           });
         }
@@ -458,25 +448,19 @@ function initEventListeners() {
         }
         previousActiveKeywords = null;
         previousActiveAuthors = null;
-        // Text empty, hide input box
-        searchWrapper.style.display = 'none';
       }
 
-      // Control clear button display
-      searchClear.style.display = textSearchQuery.length > 0 ? 'inline-flex' : 'none';
-
+      searchClear.style.display = value.length > 0 ? 'inline-flex' : 'none';
       renderPapers();
     };
 
     searchInput.addEventListener('input', handleInput);
 
-    // Clear button: clear text, restore other filters
     searchClear.addEventListener('click', (e) => {
       e.stopPropagation();
       searchInput.value = '';
       textSearchQuery = '';
       searchClear.style.display = 'none';
-      // Restore previous filters if any
       if (previousActiveKeywords && previousActiveKeywords.length > 0) {
         previousActiveKeywords.forEach(k => {
           if (!activeKeywords.includes(k)) toggleKeywordFilter(k);
@@ -490,19 +474,7 @@ function initEventListeners() {
       previousActiveKeywords = null;
       previousActiveAuthors = null;
       renderPapers();
-      // Clear after hiding input box
-      searchWrapper.style.display = 'none';
     });
-
-    // Blur event: if text is empty, hide input box (keep hidden if text is not empty)
-    searchInput.addEventListener('blur', () => {
-      const value = searchInput.value.trim();
-      if (value.length === 0) {
-        searchWrapper.style.display = 'none';
-      }
-    });
-
-    // Clicking elsewhere does not hide the input box (requirement 4), so no blur hide logic added
   }
 }
 
@@ -942,8 +914,8 @@ function renderPapers() {
     p.matchReason = undefined;
   });
 
-  // Text search priority: when non-empty text exists, sort like keywords/authors without hiding
-  if (textSearchQuery && textSearchQuery.trim().length > 0) {
+  // Text search: activate only when 2+ characters entered
+  if (textSearchQuery && textSearchQuery.trim().length >= 2) {
     const q = textSearchQuery.toLowerCase();
 
     // Sort: matched papers first

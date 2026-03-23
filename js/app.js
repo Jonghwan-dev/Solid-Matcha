@@ -1381,19 +1381,20 @@ function showPaperDetails(paper, paperIndex) {
   // Gemini does not support URL-based prompt pre-fill (?text= param is ignored).
   // Perplexity supports ?q= which auto-fills AND auto-submits the query,
   // and can fetch/read the actual arxiv paper from the web.
-  // #modified by JH(2026.03.23) - improved prompt: Korean response, structured analysis
-  const perplexityQuery = `다음 arxiv 논문을 한국어로 분석해줘. 반드시 아래 구조로 작성해.
+  // #modified by JH(2026.03.23) - prompt in English, response requested in Korean
+  const perplexityQuery = `Please analyze the following arxiv paper and respond ENTIRELY IN KOREAN.
+Read the full paper at the URL provided and write a structured analysis with these exact sections:
 
-논문: "${paper.title}"
+Paper: "${paper.title}"
 URL: ${paper.url}
 
-1. **핵심 요약 (TL;DR)**: 2~3문장으로 핵심만
-2. **연구 배경 및 문제**: 왜 이 연구가 필요한가
-3. **제안 방법**: 핵심 아이디어와 기술적 접근법
-4. **실험 결과**: 주요 성능 지표와 비교 대상 대비 개선점
-5. **결론 및 의의**: 이 연구의 기여와 한계
+1. **핵심 요약 (TL;DR)**: 2-3 sentences summarizing the core contribution
+2. **연구 배경 및 문제**: Why this research is needed and what problem it solves
+3. **제안 방법**: The key idea and technical approach
+4. **실험 결과**: Key metrics and improvements over baselines
+5. **결론 및 의의**: Contribution and limitations
 
-논문 원문을 직접 참고해서 정확하게 작성해줘.`;
+Base your analysis strictly on the actual paper content. Respond in Korean.`;
   document.getElementById('GeminiLink').href = `https://www.perplexity.ai/?q=${encodeURIComponent(perplexityQuery)}`;
   
   // Update paper position information

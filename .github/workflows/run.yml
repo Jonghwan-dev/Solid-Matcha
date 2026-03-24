@@ -323,6 +323,9 @@ jobs:
 
         cp -r data/* /tmp/data_files/data/ 2>/dev/null || true
 
+        # Copy analyze_papers.py to /tmp so it's accessible after branch switch
+        cp ai/analyze_papers.py /tmp/analyze_papers.py 2>/dev/null || true
+
         echo "Data files saved to temporary directory"
 
     - name: Setup and commit to data branch
@@ -433,7 +436,8 @@ jobs:
         AI_FILE="data/${TARGET_DATE}_AI_enhanced_${LANGUAGE}.jsonl"
 
         # Python analysis: total count, per-category, trending keywords
-        ANALYSIS=$(python3 ai/analyze_papers.py "$AI_FILE" 2>/dev/null || echo '{"total":"?","cat_lines":"-","kw_text":"-"}')
+        # Use /tmp copy since workspace is on data branch (no ai/ directory there)
+        ANALYSIS=$(python3 /tmp/analyze_papers.py "$AI_FILE" 2>/dev/null || echo '{"total":"?","cat_lines":"-","kw_text":"-"}')
 
         TOTAL=$(echo "$ANALYSIS"     | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['total'])" 2>/dev/null || echo "?")
         CAT_LINES=$(echo "$ANALYSIS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['cat_lines'])" 2>/dev/null || echo "-")
